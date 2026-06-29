@@ -23,15 +23,17 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install --upgrade pip
-          pip install git+https://github.com/kivy/buildozer.git@master
-          pip install cython==0.29.33
+          count=0
+          until [ $count -ge 3 ]
+          do
+            pip install --upgrade pip && \
+            pip install git+https://github.com/kivy/buildozer.git@master && \
+            pip install cython==0.29.33 && break
+            count=$((count+1))
+            sleep 5
+          done
           sudo apt-get update
           sudo apt-get install -y libsqlite3-dev lldb lld cmake uuid-dev libffi-dev wget
-
-      - name: Download Arabic Font
-        run: |
-          wget -O arabic_font.ttf "https://github.com/google/fonts/raw/main/ofl/cairo/Cairo%5Bwght%5D.ttf"
 
       - name: Create main.py
         run: |
@@ -58,10 +60,21 @@ jobs:
           else:
               ssl._create_default_https_context = _create_unverified_https_context
 
-          FONT_PATH = "arabic_font.ttf" if os.path.exists("arabic_font.ttf") else "Roboto"
+          # استخدام خطوط النظام الافتراضية المدعومة في أندرويد لحل مشكلة المربعات والتحميل
+          FONT_OPTIONS = [
+              "/system/fonts/NotoNaskhArabic-Regular.ttf",
+              "/system/fonts/DroidSansArabic.ttf",
+              "/system/fonts/DroidSansFallback.ttf",
+              "Roboto"
+          ]
+          FONT_PATH = "Roboto"
+          for font in FONT_OPTIONS:
+              if os.path.exists(font):
+                  FONT_PATH = font
+                  break
 
           def fix_text(text):
-              text = re.sub(r'\*\*(.*?)\*\*|__(.__?)\_\_', r'[b]\1\2[/b]', text)
+              text = re.sub(r'\*\*(.*?)\*\*|__(.*?)\_\_', r'[b]\1\2[/b]', text)
               paragraphs = text.split('\n')
               fixed_paragraphs = []
               for p in paragraphs:
@@ -147,7 +160,7 @@ jobs:
           package.domain = org.test
           source.dir = .
           source.include_exts = py,png,jpg,kv,atlas,ttf
-          version = 0.3
+          version = 0.4
           requirements = python3,kivy,requests,urllib3,certifi,arabic-reshaper,python-bidi
           orientation = portrait
           fullscreen = 0

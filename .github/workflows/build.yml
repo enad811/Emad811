@@ -61,16 +61,18 @@ jobs:
 
           FONT_PATH = "arabic_font.ttf" if os.path.exists("arabic_font.ttf") else "Roboto"
 
+          def is_arabic(text):
+              return any('\u0600' <= c <= '\u06FF' for c in text)
+
           def fix_text(text):
               if not text:
                   return ""
-              # إزالة أو استبدال الرموز الخاصة التي تسبب مربعات [] في النص
+              # تنظيف الرموز الغريبة التي تسبب مربعات [] مع الحفاظ على الحروف العربية والإنجليزية والأرقام
               text = re.sub(r'[^\w\s\d\.\،\؟\!\:\-\/\(\)\u0600-\u06FF]', '', text)
-              text = re.sub(r'\*\*(.*?)\*\*|__(.*?)\_\_', r'[b]\1\2[/b]', text)
               paragraphs = text.split('\n')
               fixed_paragraphs = []
               for p in paragraphs:
-                  if any('\u0600' <= c <= '\u06FF' for c in p):
+                  if is_arabic(p):
                       reshaped_text = arabic_reshaper.reshape(p)
                       bidi_text = get_display(reshaped_text)
                       fixed_paragraphs.append(bidi_text)
@@ -78,9 +80,9 @@ jobs:
                       fixed_paragraphs.append(p)
               return '\n'.join(fixed_paragraphs)
 
-          class ArabicTextInput(TextInput):
+          class DynamicTextInput(TextInput):
               def __init__(self, **kwargs):
-                  super(ArabicTextInput, self).__init__(**kwargs)
+                  super(DynamicTextInput, self).__init__(**kwargs)
                   self.font_name = FONT_PATH
                   self.bind(text=self.on_text_change)
 
@@ -88,10 +90,11 @@ jobs:
                   if hasattr(self, '_updating') and self._updating:
                       return
                   self._updating = True
-                  if any('\u0600' <= c <= '\u06FF' for c in value):
+                  
+                  # إذا كان النص يحتوي على عربي نقوم بتشكيله، وإذا كان إنجليزي يترك كما هو لتفادي المربعات
+                  if is_arabic(value):
                       reshaped = arabic_reshaper.reshape(value)
-                      bidi_v = get_display(reshaped)
-                      self.text = bidi_v
+                      self.text = get_display(reshaped)
                   self._updating = False
 
           class AIAssistantUI(BoxLayout):
@@ -101,13 +104,14 @@ jobs:
                   self.padding = 20
                   self.spacing = 10
                   
-                  # ربط لوحة المفاتيح لمنع اختفاء الصندوق خلفها
+                  # منع اختفاء صندوق النص خلف لوحة المفاتيح
                   Window.bind(on_keyboard_height=self.adjust_for_keyboard)
                   
-                  # العنوان العلوي بدون مربعات
+                  # العنوان العلوي
                   self.title_label = Label(text=fix_text("المساعد الذكي / AI Assistant"), font_name=FONT_PATH, font_size='22sp', size_hint_y=0.08)
                   self.add_widget(self.title_label)
                   
+                  # منطقة عرض الإجابات
                   self.scroll_view = ScrollView(size_hint_y=0.62)
                   self.output_label = Label(
                       text=fix_text("تم الاتصال! اسألني أي سؤال الآن..."), 
@@ -122,29 +126,29 @@ jobs:
                   self.scroll_view.add_widget(self.output_label)
                   self.add_widget(self.scroll_view)
                   
-                  # صندوق إدخال النص المطور للعربية
-                  self.text_input = ArabicTextInput(
-                      hint_text=get_display(arabic_reshaper.reshape("اكتب سؤالك هنا...")),
+                  # صندوق الإدخال الذكي المشترك للعربي والإنجليزي
+                  self.text_input = DynamicTextInput(
+                      hint_text=get_display(arabic_reshaper.reshape("اكتب سؤالك هنا... / Type here...")),
                       multiline=False, 
                       size_hint_y=0.12
                   )
                   self.add_widget(self.text_input)
                   
-                  # شريط الأزرار السفلي (يحتوي على الإرسال ومكان محجوز للمايك مستقبلاً)
+                  # شريط الأزرار السفلي (إرسال + المايك)
                   self.buttons_layout = BoxLayout(orientation='horizontal', size_hint_y=0.12, spacing=10)
                   
-                  self.send_btn = Button(text=fix_text("إرسال / Send"), font_name=FONT_PATH, size_hint_x=0.75, background_color=(0, 0.4, 0.9, 1))
+                  self.send_btn = Button(text=fix_text("إرسال / Send"), font_name=FONT_PATH, size_hint_x=0.75, background_color=(0.0, 0.4, 0.8, 1.0))
                   self.send_btn.bind(on_press=self.ask_ai)
                   
-                  # زر المايك المحجوز للمستقبل
-                  self.mic_btn = Button(text="🎤", font_name=FONT_PATH, size_hint_x=0.25, background_color=(0.2, 0.2, 0.2, 1))
+                  # مكان المايك المحجوز للمستقبل
+                  self.mic_btn = Button(text="🎤", font_name=FONT_PATH, size_hint_x=0.25, background_color=(0.2, 0.2, 0.2, 1.0))
                   
                   self.buttons_layout.add_widget(self.mic_btn)
                   self.buttons_layout.add_widget(self.send_btn)
                   self.add_widget(self.buttons_layout)
 
               def adjust_for_keyboard(self, window, height):
-                  # رفع الواجهة بالكامل للأعلى عند ظهور لوحة المفاتيح لمنع الاختفاء
+                  # رفع الواجهة بالكامل للأعلى عند ظهور لوحة المفاتيح
                   if height > 0:
                       self.padding = [20, height + 10, 20, 10]
                   else:
@@ -157,13 +161,13 @@ jobs:
               def ask_ai(self, instance):
                   user_text = self.text_input.text.strip()
                   if user_text:
-                      self.output_label.text = fix_text("جاري التفكير...")
+                      self.output_label.text = fix_text("جاري التفكير... / Thinking...")
                       self.text_input.text = ""
                       encoded_text = urllib.parse.quote(user_text)
                       url = f"https://text.pollinations.ai/{encoded_text}"
                       headers = {'User-Agent': 'Mozilla/5.0'}
                       try:
-                          UrlRequest(url, req_headers=headers, on_success=self.got_response, on_failure=self.got_error, on_error=self.got_error, timeout=20)
+                          UrlRequest(url, req_headers=headers, on_success=self.got_response, on_failure=self.got_error, on_error=self.got_error, timeout=30)
                       except Exception as e:
                           self.output_label.text = fix_text(f"خطأ في الاتصال: {str(e)}")
 
@@ -189,7 +193,7 @@ jobs:
           package.domain = org.test
           source.dir = .
           source.include_exts = py,png,jpg,kv,atlas,ttf
-          version = 0.6
+          version = 0.7
           requirements = python3,kivy,requests,urllib3,certifi,arabic-reshaper,python-bidi
           orientation = portrait
           fullscreen = 0

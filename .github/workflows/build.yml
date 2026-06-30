@@ -23,17 +23,15 @@ jobs:
 
       - name: Install dependencies
         run: |
-          count=0
-          until [ $count -ge 3 ]
-          do
-            pip install --upgrade pip && \
-            pip install git+https://github.com/kivy/buildozer.git@master && \
-            pip install cython==0.29.33 && break
-            count=$((count+1))
-            sleep 5
-          done
+          pip install --upgrade pip
+          pip install git+https://github.com/kivy/buildozer.git@master
+          pip install cython==0.29.33
           sudo apt-get update
-          sudo apt-get install -y libsqlite3-dev lldb lld cmake uuid-dev libffi-dev wget
+          sudo apt-get install -y libsqlite3-dev lldb lld cmake uuid-dev libffi-dev fonts-dejavu-core
+
+      - name: Copy Stable Arabic Font
+        run: |
+          cp /usr/share/fonts/truetype/dejavu/DejaVuSans.ttf ./arabic_font.ttf
 
       - name: Create main.py
         run: |
@@ -47,6 +45,7 @@ jobs:
           from kivy.uix.button import Button
           from kivy.uix.scrollview import ScrollView
           from kivy.network.urlrequest import UrlRequest
+          from kivy.core.window import Window
           import urllib.parse
           import ssl
           import re
@@ -60,20 +59,13 @@ jobs:
           else:
               ssl._create_default_https_context = _create_unverified_https_context
 
-          # استخدام خطوط النظام الافتراضية المدعومة في أندرويد لحل مشكلة المربعات والتحميل
-          FONT_OPTIONS = [
-              "/system/fonts/NotoNaskhArabic-Regular.ttf",
-              "/system/fonts/DroidSansArabic.ttf",
-              "/system/fonts/DroidSansFallback.ttf",
-              "Roboto"
-          ]
-          FONT_PATH = "Roboto"
-          for font in FONT_OPTIONS:
-              if os.path.exists(font):
-                  FONT_PATH = font
-                  break
+          FONT_PATH = "arabic_font.ttf" if os.path.exists("arabic_font.ttf") else "Roboto"
 
           def fix_text(text):
+              if not text:
+                  return ""
+              # إزالة أو استبدال الرموز الخاصة التي تسبب مربعات [] في النص
+              text = re.sub(r'[^\w\s\d\.\،\؟\!\:\-\/\(\)\u0600-\u06FF]', '', text)
               text = re.sub(r'\*\*(.*?)\*\*|__(.*?)\_\_', r'[b]\1\2[/b]', text)
               paragraphs = text.split('\n')
               fixed_paragraphs = []
@@ -86,6 +78,22 @@ jobs:
                       fixed_paragraphs.append(p)
               return '\n'.join(fixed_paragraphs)
 
+          class ArabicTextInput(TextInput):
+              def __init__(self, **kwargs):
+                  super(ArabicTextInput, self).__init__(**kwargs)
+                  self.font_name = FONT_PATH
+                  self.bind(text=self.on_text_change)
+
+              def on_text_change(self, instance, value):
+                  if hasattr(self, '_updating') and self._updating:
+                      return
+                  self._updating = True
+                  if any('\u0600' <= c <= '\u06FF' for c in value):
+                      reshaped = arabic_reshaper.reshape(value)
+                      bidi_v = get_display(reshaped)
+                      self.text = bidi_v
+                  self._updating = False
+
           class AIAssistantUI(BoxLayout):
               def __init__(self, **kwargs):
                   super(AIAssistantUI, self).__init__(**kwargs)
@@ -93,11 +101,16 @@ jobs:
                   self.padding = 20
                   self.spacing = 10
                   
-                  self.add_widget(Label(text="AI Assistant", font_name=FONT_PATH, font_size='28sp', size_hint_y=0.1))
+                  # ربط لوحة المفاتيح لمنع اختفاء الصندوق خلفها
+                  Window.bind(on_keyboard_height=self.adjust_for_keyboard)
                   
-                  self.scroll_view = ScrollView(size_hint_y=0.6)
+                  # العنوان العلوي بدون مربعات
+                  self.title_label = Label(text=fix_text("المساعد الذكي / AI Assistant"), font_name=FONT_PATH, font_size='22sp', size_hint_y=0.08)
+                  self.add_widget(self.title_label)
+                  
+                  self.scroll_view = ScrollView(size_hint_y=0.62)
                   self.output_label = Label(
-                      text=fix_text("Connected! Ask me any question safely now... / تم الاتصال! اسألني أي سؤال الآن..."), 
+                      text=fix_text("تم الاتصال! اسألني أي سؤال الآن..."), 
                       font_name=FONT_PATH,
                       font_size='16sp', 
                       size_hint_y=None, 
@@ -109,17 +122,33 @@ jobs:
                   self.scroll_view.add_widget(self.output_label)
                   self.add_widget(self.scroll_view)
                   
-                  self.text_input = TextInput(
-                      hint_text="Type your question here... / اكتب سؤالك هنا...", 
-                      font_name=FONT_PATH,
+                  # صندوق إدخال النص المطور للعربية
+                  self.text_input = ArabicTextInput(
+                      hint_text=get_display(arabic_reshaper.reshape("اكتب سؤالك هنا...")),
                       multiline=False, 
-                      size_hint_y=0.15
+                      size_hint_y=0.12
                   )
                   self.add_widget(self.text_input)
                   
-                  self.send_btn = Button(text="Send to AI / إرسال", font_name=FONT_PATH, size_hint_y=0.15, background_color=(0, 0.5, 1, 1))
+                  # شريط الأزرار السفلي (يحتوي على الإرسال ومكان محجوز للمايك مستقبلاً)
+                  self.buttons_layout = BoxLayout(orientation='horizontal', size_hint_y=0.12, spacing=10)
+                  
+                  self.send_btn = Button(text=fix_text("إرسال / Send"), font_name=FONT_PATH, size_hint_x=0.75, background_color=(0, 0.4, 0.9, 1))
                   self.send_btn.bind(on_press=self.ask_ai)
-                  self.add_widget(self.send_btn)
+                  
+                  # زر المايك المحجوز للمستقبل
+                  self.mic_btn = Button(text="🎤", font_name=FONT_PATH, size_hint_x=0.25, background_color=(0.2, 0.2, 0.2, 1))
+                  
+                  self.buttons_layout.add_widget(self.mic_btn)
+                  self.buttons_layout.add_widget(self.send_btn)
+                  self.add_widget(self.buttons_layout)
+
+              def adjust_for_keyboard(self, window, height):
+                  # رفع الواجهة بالكامل للأعلى عند ظهور لوحة المفاتيح لمنع الاختفاء
+                  if height > 0:
+                      self.padding = [20, height + 10, 20, 10]
+                  else:
+                      self.padding = [20, 20, 20, 20]
 
               def update_label_height(self, instance, size):
                   self.output_label.height = size[1]
@@ -128,7 +157,7 @@ jobs:
               def ask_ai(self, instance):
                   user_text = self.text_input.text.strip()
                   if user_text:
-                      self.output_label.text = fix_text("Thinking... / جاري التفكير...")
+                      self.output_label.text = fix_text("جاري التفكير...")
                       self.text_input.text = ""
                       encoded_text = urllib.parse.quote(user_text)
                       url = f"https://text.pollinations.ai/{encoded_text}"
@@ -136,13 +165,13 @@ jobs:
                       try:
                           UrlRequest(url, req_headers=headers, on_success=self.got_response, on_failure=self.got_error, on_error=self.got_error, timeout=20)
                       except Exception as e:
-                          self.output_label.text = fix_text(f"Connection error: {str(e)}")
+                          self.output_label.text = fix_text(f"خطأ في الاتصال: {str(e)}")
 
               def got_response(self, request, result):
                   self.output_label.text = fix_text(str(result).strip())
 
               def got_error(self, request, error):
-                  self.output_label.text = fix_text(f"Connection error: {str(error)}")
+                  self.output_label.text = fix_text(f"خطأ: {str(error)}")
 
           class AIAssistantApp(App):
               def build(self): return AIAssistantUI()
@@ -160,11 +189,11 @@ jobs:
           package.domain = org.test
           source.dir = .
           source.include_exts = py,png,jpg,kv,atlas,ttf
-          version = 0.4
+          version = 0.6
           requirements = python3,kivy,requests,urllib3,certifi,arabic-reshaper,python-bidi
           orientation = portrait
           fullscreen = 0
-          android.permissions = INTERNET
+          android.permissions = INTERNET, RECORD_AUDIO
           android.api = 31
           android.minapi = 21
           android.ndk_api = 21

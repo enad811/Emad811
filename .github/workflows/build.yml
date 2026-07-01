@@ -45,6 +45,7 @@ jobs:
           from kivy.uix.button import Button
           from kivy.uix.scrollview import ScrollView
           from kivy.network.urlrequest import UrlRequest
+          from kivy.core.window import Window
           import urllib.parse
           import ssl
           import re
@@ -58,17 +59,24 @@ jobs:
           else:
               ssl._create_default_https_context = _create_unverified_https_context
 
+          # إجبار نافذة التطبيق برمجياً على الارتفاع وتغيير الحجم فور ظهور لوحة المفاتيح
+          Window.softinput_mode = 'resize'
+
           FONT_PATH = "combined_font.ttf" if os.path.exists("combined_font.ttf") else "Roboto"
 
           def fix_text(text):
               if not text:
                   return ""
-              # تنظيف الرموز الغريبة والمربعات
+              
+              # تنظيف النصوص من الرموز العشوائية لمنع تشويه المربعات
               text = re.sub(r'[^\w\s\d\.\،\؟\!\:\-\/\(\)\u0600-\u06FF]', '', text)
+              
+              # معالجة كل سطر بشكل منفصل لدعم النصوص الطويلة المدمجة
               lines = text.split('\n')
               fixed_lines = []
               for line in lines:
                   if any('\u0600' <= c <= '\u06FF' for c in line):
+                      # تشكيل الكلمات العربية وقلب اتجاهها لتظهر متصلة من اليمين للياسر
                       reshaped = arabic_reshaper.reshape(line)
                       bidi_line = get_display(reshaped)
                       fixed_lines.append(bidi_line)
@@ -80,14 +88,14 @@ jobs:
               def __init__(self, **kwargs):
                   super(AIAssistantUI, self).__init__(**kwargs)
                   self.orientation = 'vertical'
-                  self.padding = 20
+                  self.padding = [15, 15, 15, 15]
                   self.spacing = 10
                   
-                  # العنوان
+                  # شريط العنوان العلوي
                   self.title_label = Label(text=fix_text("المساعد الذكي / AI Assistant"), font_name=FONT_PATH, font_size='22sp', size_hint_y=0.08)
                   self.add_widget(self.title_label)
                   
-                  # منطقة الرسائل
+                  # منطقة عرض الرسائل المدعومة بالتمرير لأسفل وأعلى
                   self.scroll_view = ScrollView(size_hint_y=0.68)
                   self.output_label = Label(
                       text=fix_text("تم الاتصال بنجاح! اسألني أي سؤال بالعربية أو الإنجليزية..."), 
@@ -101,17 +109,16 @@ jobs:
                   self.scroll_view.add_widget(self.output_label)
                   self.add_widget(self.scroll_view)
                   
-                  # صندوق إدخال بسيط ومستقر يمنع مشاكل الكتابة الحية المقلوبة
+                  # صندوق كتابة النصوص المستقر والذكي
                   self.text_input = TextInput(
                       hint_text="Type here... / اكتب هنا...",
                       font_name=FONT_PATH,
                       multiline=False, 
-                      size_hint_y=0.12,
-                      input_type='text'
+                      size_hint_y=0.12
                   )
                   self.add_widget(self.text_input)
                   
-                  # أزرار الإرسال والمايك
+                  # الأزرار السفلية
                   self.buttons_layout = BoxLayout(orientation='horizontal', size_hint_y=0.12, spacing=10)
                   self.send_btn = Button(text=fix_text("إرسال / Send"), font_name=FONT_PATH, size_hint_x=0.75, background_color=(0, 0.4, 0.9, 1))
                   self.send_btn.bind(on_press=self.ask_ai)
@@ -140,6 +147,7 @@ jobs:
                           self.output_label.text = fix_text(f"خطأ في الاتصال: {str(e)}")
 
               def got_response(self, request, result):
+                  # معالجة الرد العربي القادم لكي يظهر منسقاً ومتصلاً تماماً
                   self.output_label.text = fix_text(str(result).strip())
 
               def got_error(self, request, error):
@@ -161,7 +169,7 @@ jobs:
           package.domain = org.test
           source.dir = .
           source.include_exts = py,png,jpg,kv,atlas,ttf
-          version = 0.7
+          version = 0.8
           requirements = python3,kivy,requests,urllib3,certifi,arabic-reshaper,python-bidi
           orientation = portrait
           fullscreen = 0
@@ -171,8 +179,6 @@ jobs:
           android.ndk_api = 21
           android.archs = arm64-v8a, armeabi-v7a
           p4a.branch = master
-          
-          # السطر السحري لحل مشكلة اختفاء الكلمات تحت لوحة المفاتيح نهائياً في أندرويد
           android.window_soft_input_mode = resize
 
           [buildozer]

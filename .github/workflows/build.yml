@@ -45,7 +45,6 @@ jobs:
           from kivy.uix.button import Button
           from kivy.uix.scrollview import ScrollView
           from kivy.network.urlrequest import UrlRequest
-          from kivy.core.window import Window
           import urllib.parse
           import ssl
           import re
@@ -64,9 +63,8 @@ jobs:
           def fix_text(text):
               if not text:
                   return ""
-              
+              # تنظيف الرموز الغريبة والمربعات
               text = re.sub(r'[^\w\s\d\.\،\؟\!\:\-\/\(\)\u0600-\u06FF]', '', text)
-              
               lines = text.split('\n')
               fixed_lines = []
               for line in lines:
@@ -78,24 +76,6 @@ jobs:
                       fixed_lines.append(line)
               return '\n'.join(fixed_lines)
 
-          class DualLanguageTextInput(TextInput):
-              def __init__(self, **kwargs):
-                  super(DualLanguageTextInput, self).__init__(**kwargs)
-                  self.font_name = FONT_PATH
-                  self.use_bubble = True
-                  self.bind(text=self.on_text_change)
-
-              def on_text_change(self, instance, value):
-                  if hasattr(self, '_updating') and self._updating:
-                      return
-                  
-                  if value:
-                      if any('\u0600' <= c <= '\u06FF' for c in value):
-                          self._updating = True
-                          reshaped = arabic_reshaper.reshape(value)
-                          self.text = get_display(reshaped)
-                          self._updating = False
-
           class AIAssistantUI(BoxLayout):
               def __init__(self, **kwargs):
                   super(AIAssistantUI, self).__init__(**kwargs)
@@ -103,34 +83,36 @@ jobs:
                   self.padding = 20
                   self.spacing = 10
                   
-                  Window.bind(on_keyboard_height=self.adjust_for_keyboard)
-                  
+                  # العنوان
                   self.title_label = Label(text=fix_text("المساعد الذكي / AI Assistant"), font_name=FONT_PATH, font_size='22sp', size_hint_y=0.08)
                   self.add_widget(self.title_label)
                   
-                  self.scroll_view = ScrollView(size_hint_y=0.62)
+                  # منطقة الرسائل
+                  self.scroll_view = ScrollView(size_hint_y=0.68)
                   self.output_label = Label(
                       text=fix_text("تم الاتصال بنجاح! اسألني أي سؤال بالعربية أو الإنجليزية..."), 
                       font_name=FONT_PATH,
                       font_size='16sp', 
                       size_hint_y=None, 
                       halign='center', 
-                      valign='top',
-                      markup=True
+                      valign='top'
                   )
                   self.output_label.bind(texture_size=self.update_label_height)
                   self.scroll_view.add_widget(self.output_label)
                   self.add_widget(self.scroll_view)
                   
-                  self.text_input = DualLanguageTextInput(
-                      hint_text=get_display(arabic_reshaper.reshape("اكتب سؤالك هنا... / Type here...")),
+                  # صندوق إدخال بسيط ومستقر يمنع مشاكل الكتابة الحية المقلوبة
+                  self.text_input = TextInput(
+                      hint_text="Type here... / اكتب هنا...",
+                      font_name=FONT_PATH,
                       multiline=False, 
-                      size_hint_y=0.12
+                      size_hint_y=0.12,
+                      input_type='text'
                   )
                   self.add_widget(self.text_input)
                   
+                  # أزرار الإرسال والمايك
                   self.buttons_layout = BoxLayout(orientation='horizontal', size_hint_y=0.12, spacing=10)
-                  
                   self.send_btn = Button(text=fix_text("إرسال / Send"), font_name=FONT_PATH, size_hint_x=0.75, background_color=(0, 0.4, 0.9, 1))
                   self.send_btn.bind(on_press=self.ask_ai)
                   
@@ -139,12 +121,6 @@ jobs:
                   self.buttons_layout.add_widget(self.mic_btn)
                   self.buttons_layout.add_widget(self.send_btn)
                   self.add_widget(self.buttons_layout)
-
-              def adjust_for_keyboard(self, window, height):
-                  if height > 0:
-                      self.padding = [20, height + 10, 20, 10]
-                  else:
-                      self.padding = [20, 20, 20, 20]
 
               def update_label_height(self, instance, size):
                   self.output_label.height = size[1]
@@ -167,7 +143,7 @@ jobs:
                   self.output_label.text = fix_text(str(result).strip())
 
               def got_error(self, request, error):
-                  self.output_label.text = fix_text(f"خطأ في الخادم أو انتهاء الوقت. يرجى المحاولة مجدداً.")
+                  self.output_label.text = fix_text(f"خطأ في الخادم أو انتهاء الوقت.")
 
           class AIAssistantApp(App):
               def build(self): return AIAssistantUI()
@@ -185,7 +161,7 @@ jobs:
           package.domain = org.test
           source.dir = .
           source.include_exts = py,png,jpg,kv,atlas,ttf
-          version = 0.6
+          version = 0.7
           requirements = python3,kivy,requests,urllib3,certifi,arabic-reshaper,python-bidi
           orientation = portrait
           fullscreen = 0
@@ -195,6 +171,9 @@ jobs:
           android.ndk_api = 21
           android.archs = arm64-v8a, armeabi-v7a
           p4a.branch = master
+          
+          # السطر السحري لحل مشكلة اختفاء الكلمات تحت لوحة المفاتيح نهائياً في أندرويد
+          android.window_soft_input_mode = resize
 
           [buildozer]
           log_level = 2
